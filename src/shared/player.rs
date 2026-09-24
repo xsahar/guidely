@@ -8,6 +8,8 @@ pub struct Player {
     pub y: f32,
     pub angle: f32,
     pub level: u8,
+    pub kills: u32,
+    pub deaths: u32,
 }
 
 impl Player {
@@ -19,6 +21,8 @@ impl Player {
             y,
             angle: 0.0,
             level,
+            kills: 0,
+            deaths: 0,
         }
     }
 }

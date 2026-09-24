@@ -48,6 +48,10 @@ impl Server {
                                 );
                                 ServerMessage::Error("input accepted".to_string())
                             }
+                            ClientMessage::Shoot { sequence } => {
+                                println!("Shot seq={}", sequence);
+                                ServerMessage::Error("shot accepted".to_string())
+                            }
                             ClientMessage::ChangeLevel { level } => {
                                 println!("Level change to {}", level);
                                 ServerMessage::Welcome {

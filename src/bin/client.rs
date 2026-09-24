@@ -10,7 +10,7 @@ struct ConnectionForm {
     server_ip: String,
     username: String,
     level: u8,
-    editing_server_ip: bool,
+    focused_field: u8,
     error: String,
 }
 
@@ -20,7 +20,7 @@ impl Default for ConnectionForm {
             server_ip: "127.0.0.1:8080".to_string(),
             username: String::new(),
             level: 1,
-            editing_server_ip: true,
+            focused_field: 0,
             error: String::new(),
         }
     }
@@ -28,35 +28,40 @@ impl Default for ConnectionForm {
 
 impl ConnectionForm {
     fn update(&mut self) -> Option<(String, String, u8)> {
-        if is_key_pressed(KeyCode::Key1) {
-            self.level = 1;
-        }
-        if is_key_pressed(KeyCode::Key2) {
-            self.level = 2;
-        }
-        if is_key_pressed(KeyCode::Key3) {
-            self.level = 3;
-        }
         if is_key_pressed(KeyCode::Tab) {
-            self.editing_server_ip = !self.editing_server_ip;
+            self.focused_field = (self.focused_field + 1) % 3;
         }
-        if is_key_pressed(KeyCode::Backspace) {
-            let field = if self.editing_server_ip {
-                &mut self.server_ip
+        if self.focused_field == 2 {
+            if is_key_pressed(KeyCode::Key1) {
+                self.level = 1;
+            }
+            if is_key_pressed(KeyCode::Key2) {
+                self.level = 2;
+            }
+            if is_key_pressed(KeyCode::Key3) {
+                self.level = 3;
+            }
+            if is_key_pressed(KeyCode::Left) || is_key_pressed(KeyCode::Down) {
+                self.level = if self.level == 1 { 3 } else { self.level - 1 };
+            }
+            if is_key_pressed(KeyCode::Right) || is_key_pressed(KeyCode::Up) {
+                self.level = if self.level == 3 { 1 } else { self.level + 1 };
+            }
+        } else if is_key_pressed(KeyCode::Backspace) {
+            if self.focused_field == 0 {
+                self.server_ip.pop();
             } else {
-                &mut self.username
-            };
-            field.pop();
+                self.username.pop();
+            }
         }
         while let Some(character) = get_char_pressed() {
-            if !character.is_control() {
-                let field = if self.editing_server_ip {
-                    &mut self.server_ip
-                } else {
-                    &mut self.username
-                };
-                if field.len() < 64 {
-                    field.push(character);
+            if self.focused_field < 2 && !character.is_control() {
+                if self.focused_field == 0 {
+                    if self.server_ip.len() < 64 {
+                        self.server_ip.push(character);
+                    }
+                } else if self.username.len() < 64 {
+                    self.username.push(character);
                 }
             }
         }
@@ -95,7 +100,7 @@ fn draw_connection_form(form: &ConnectionForm) {
         440.0,
         48.0,
         2.0,
-        if form.editing_server_ip { GREEN } else { GRAY },
+        if form.focused_field == 0 { GREEN } else { GRAY },
     );
     draw_text(&form.server_ip, center_x + 14.0, 292.0, 22.0, WHITE);
 
@@ -106,7 +111,7 @@ fn draw_connection_form(form: &ConnectionForm) {
         440.0,
         48.0,
         2.0,
-        if !form.editing_server_ip { GREEN } else { GRAY },
+        if form.focused_field == 1 { GREEN } else { GRAY },
     );
     draw_text(&form.username, center_x + 14.0, 397.0, 22.0, WHITE);
 
@@ -122,7 +127,11 @@ fn draw_connection_form(form: &ConnectionForm) {
         center_x,
         500.0,
         18.0,
-        LIGHTGRAY,
+        if form.focused_field == 2 {
+            GREEN
+        } else {
+            LIGHTGRAY
+        },
     );
     if !form.error.is_empty() {
         draw_text(&form.error, center_x, 535.0, 18.0, RED);
@@ -139,6 +148,7 @@ struct ClientRuntime {
     turn_value: f32,
     last_fps: f64,
     last_input: Instant,
+    shot_flash_until: Option<Instant>,
 }
 
 impl ClientRuntime {
@@ -156,6 +166,7 @@ impl ClientRuntime {
             turn_value: 0.0,
             last_fps: 0.0,
             last_input: Instant::now(),
+            shot_flash_until: None,
         })
     }
 
@@ -187,6 +198,9 @@ impl ClientRuntime {
                             ServerMessage::Snapshot { .. } => {
                                 self.state = Some(message);
                             }
+                            ServerMessage::Waiting { .. } => {
+                                self.state = Some(message);
+                            }
                             ServerMessage::Error(_) => {}
                         }
                     }
@@ -213,6 +227,18 @@ impl ClientRuntime {
         let _ = self.socket.send(&payload);
     }
 
+    fn shoot(&mut self) {
+        if self.player_id.is_none() {
+            return;
+        }
+        self.sequence += 1;
+        let message = ClientMessage::Shoot {
+            sequence: self.sequence,
+        };
+        let _ = self.socket.send(&bincode::serialize(&message).unwrap());
+        self.shot_flash_until = Some(Instant::now() + Duration::from_millis(90));
+    }
+
     fn update_input(&mut self) {
         let mut move_value = 0.0;
         let mut turn_value = 0.0;
@@ -237,6 +263,10 @@ impl ClientRuntime {
 
         self.move_value = move_value;
         self.turn_value = turn_value;
+
+        if is_key_pressed(KeyCode::Space) || is_mouse_button_pressed(MouseButton::Left) {
+            self.shoot();
+        }
 
         if is_key_pressed(KeyCode::Q) {
             let msg = ClientMessage::Disconnect;
@@ -289,10 +319,22 @@ fn draw_maze_and_players(runtime: &ClientRuntime) {
         })
         .unwrap_or(1);
     let map = map_for_level(current_level, &map);
+    let (kills, deaths) = runtime
+        .player_id
+        .and_then(|player_id| {
+            runtime.state.as_ref().and_then(|state| match state {
+                ServerMessage::Snapshot { players, .. } => players
+                    .iter()
+                    .find(|player| player.id == player_id)
+                    .map(|player| (player.kills, player.deaths)),
+                _ => None,
+            })
+        })
+        .unwrap_or((0, 0));
 
     let cell = 10.0;
     let offset_x = 16.0;
-    let offset_y = 104.0;
+    let offset_y = 150.0;
     let player_x = runtime
         .player_id
         .and_then(|_| runtime.state.as_ref())
@@ -328,6 +370,18 @@ fn draw_maze_and_players(runtime: &ClientRuntime) {
         .unwrap_or(0.0);
 
     draw_first_person(&map, player_x, player_y, player_angle);
+    draw_visible_opponents(runtime, &map, player_x, player_y, player_angle);
+    if runtime
+        .shot_flash_until
+        .is_some_and(|until| Instant::now() < until)
+    {
+        draw_circle(
+            screen_width() * 0.5,
+            40.0 + (screen_height() - 88.0) * 0.48,
+            18.0,
+            Color::new(1.0, 0.65, 0.15, 0.8),
+        );
+    }
     for (y, row) in map.iter().enumerate() {
         for (x, cell_value) in row.iter().enumerate() {
             let px = offset_x + x as f32 * cell;
@@ -370,6 +424,13 @@ fn draw_maze_and_players(runtime: &ClientRuntime) {
         18.0,
         WHITE,
     );
+    draw_text(
+        &format!("KILLS: {}  DEATHS: {}", kills, deaths),
+        20.0,
+        98.0,
+        16.0,
+        WHITE,
+    );
     draw_text("MINIMAP", offset_x, offset_y - 12.0, 16.0, WHITE);
     draw_text(
         &format!("LEVEL {}", current_level),
@@ -379,9 +440,37 @@ fn draw_maze_and_players(runtime: &ClientRuntime) {
         WHITE,
     );
     draw_text(
-        "WASD move, Q quit",
+        "WASD move, SPACE/CLICK fire, Q quit",
         20.0,
         screen_height() - 20.0,
+        18.0,
+        WHITE,
+    );
+}
+
+fn draw_waiting_screen(runtime: &ClientRuntime, connected: usize, required: usize) {
+    clear_background(Color::new(0.08, 0.12, 0.15, 1.0));
+    let center_x = screen_width() * 0.5 - 240.0;
+    draw_text("GUIDELY", center_x, 190.0, 44.0, WHITE);
+    draw_text("Waiting for another player", center_x, 270.0, 28.0, YELLOW);
+    draw_text(
+        &format!("Players connected: {} / {}", connected, required),
+        center_x,
+        320.0,
+        22.0,
+        LIGHTGRAY,
+    );
+    draw_text(
+        "Keep this window open; the match starts automatically.",
+        center_x,
+        370.0,
+        18.0,
+        WHITE,
+    );
+    draw_text(
+        &format!("Player: {}", runtime.username),
+        center_x,
+        420.0,
         18.0,
         WHITE,
     );
@@ -464,7 +553,92 @@ fn draw_first_person(map: &[Vec<i32>], player_x: f32, player_y: f32, player_angl
         1.0,
         WHITE,
     );
-    draw_text("FIELD VIEW", view_x + 12.0, view_y + 24.0, 18.0, WHITE);
+    draw_text("FIELD VIEW", 250.0, 28.0, 18.0, WHITE);
+}
+
+fn draw_visible_opponents(
+    runtime: &ClientRuntime,
+    map: &[Vec<i32>],
+    player_x: f32,
+    player_y: f32,
+    player_angle: f32,
+) {
+    let Some(ServerMessage::Snapshot { players, .. }) = &runtime.state else {
+        return;
+    };
+    let Some(player_id) = runtime.player_id else {
+        return;
+    };
+    let view_width = screen_width();
+    let view_height = screen_height() - 88.0;
+    let horizon = 40.0 + view_height * 0.48;
+    let fov = std::f32::consts::FRAC_PI_2;
+
+    for opponent in players {
+        if opponent.id == player_id {
+            continue;
+        }
+        let delta_x = opponent.x - player_x;
+        let delta_y = opponent.y - player_y;
+        let distance = (delta_x * delta_x + delta_y * delta_y).sqrt();
+        let relative_angle = normalize_angle(delta_y.atan2(delta_x) - player_angle);
+        if opponent.level != current_player_level(runtime)
+            || distance <= 0.1
+            || distance > 20.0
+            || relative_angle.abs() > fov * 0.5
+            || !has_line_of_sight(map, player_x, player_y, opponent.x, opponent.y)
+        {
+            continue;
+        }
+
+        let screen_x = view_width * 0.5 + relative_angle / fov * view_width;
+        let size = (view_height / distance * 0.16).clamp(10.0, 120.0);
+        let top = horizon - size;
+        draw_rectangle(screen_x - size * 0.28, top, size * 0.56, size, RED);
+        draw_circle(screen_x, top - size * 0.18, size * 0.22, MAROON);
+    }
+}
+
+fn current_player_level(runtime: &ClientRuntime) -> u8 {
+    runtime
+        .player_id
+        .and_then(|player_id| {
+            runtime.state.as_ref().and_then(|state| match state {
+                ServerMessage::Snapshot { players, .. } => players
+                    .iter()
+                    .find(|player| player.id == player_id)
+                    .map(|player| player.level),
+                _ => None,
+            })
+        })
+        .unwrap_or(1)
+}
+
+fn normalize_angle(angle: f32) -> f32 {
+    let mut normalized = angle;
+    while normalized > std::f32::consts::PI {
+        normalized -= std::f32::consts::TAU;
+    }
+    while normalized < -std::f32::consts::PI {
+        normalized += std::f32::consts::TAU;
+    }
+    normalized
+}
+
+fn has_line_of_sight(map: &[Vec<i32>], start_x: f32, start_y: f32, end_x: f32, end_y: f32) -> bool {
+    let distance = ((end_x - start_x).powi(2) + (end_y - start_y).powi(2)).sqrt();
+    let samples = (distance / 0.08).ceil() as usize;
+    for sample in 1..samples {
+        let progress = sample as f32 / samples as f32;
+        let x = start_x + (end_x - start_x) * progress;
+        let y = start_y + (end_y - start_y) * progress;
+        let cell_x = x.floor() as usize;
+        let cell_y = y.floor() as usize;
+        if cell_y >= map.len() || cell_x >= map[cell_y].len() || map[cell_y][cell_x] == 1 {
+            return false;
+        }
+    }
+    true
 }
 
 fn map_for_level(level: u8, default_map: &[Vec<i32>]) -> Vec<Vec<i32>> {
@@ -510,6 +684,21 @@ async fn main() {
 
         let runtime = runtime.as_mut().expect("runtime created above");
         runtime.poll_server();
+        let waiting = runtime.state.as_ref().and_then(|state| match state {
+            ServerMessage::Waiting {
+                connected,
+                required,
+            } => Some((*connected, *required)),
+            _ => None,
+        });
+        if let Some((connected, required)) = waiting {
+            runtime.move_value = 0.0;
+            runtime.turn_value = 0.0;
+            runtime.send_input();
+            draw_waiting_screen(runtime, connected, required);
+            next_frame().await;
+            continue;
+        }
         runtime.update_input();
         if runtime.player_id.is_some() {
             runtime.send_input();

@@ -11,6 +11,9 @@ pub enum ClientMessage {
         turn: f32,
         move_forward: f32,
     },
+    Shoot {
+        sequence: u64,
+    },
     ChangeLevel {
         level: u8,
     },
@@ -27,6 +30,10 @@ pub enum ServerMessage {
         tick: u64,
         players: Vec<PlayerState>,
     },
+    Waiting {
+        connected: usize,
+        required: usize,
+    },
     Error(String),
 }
 
@@ -38,4 +45,6 @@ pub struct PlayerState {
     pub x: f32,
     pub y: f32,
     pub angle: f32,
+    pub kills: u32,
+    pub deaths: u32,
 }
