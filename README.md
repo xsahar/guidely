@@ -1,6 +1,6 @@
-# Guidely — Free, Open-Source Internal RAG Knowledge Assistant
+# Guidely — Open-Source Internal RAG Knowledge Assistant
 
-Guidely is a 100% free, full-stack internal Retrieval-Augmented Generation (RAG) knowledge assistant. It ingests company policy documents, converts them into high-dimensional vector embeddings locally using `sentence-transformers`, indexes them in a local FAISS vector database, and uses the Groq SDK to deliver accurate, grounded answers with strict source citations.
+Guidely is a full-stack internal Retrieval-Augmented Generation (RAG) knowledge assistant. It ingests company policy documents, converts them into high-dimensional vector embeddings locally using `sentence-transformers`, indexes them in a local FAISS vector database, and uses the Groq SDK to deliver accurate, grounded answers with strict source citations.
 
 ---
 
