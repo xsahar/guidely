@@ -1,1 +1,15 @@
-/target/
+# Secrets and keys
+.env
+*.env
+
+# Python cache & test scripts
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+scratch.py
+
+# Frontend & IDE
+node_modules/
+dist/
+.vscode/

@@ -1,0 +1,4 @@
+Guidely Inc. Security & Compliance Policy
+1. Password & Authentication: All employee accounts must enforce 2FA (Two-Factor Authentication) using an authenticator app. Hardware security keys are provided upon request.
+2. Device Encryption: All company-issued laptops must have Full Disk Encryption (BitLocker/FileVault) enabled at all times.
+3. Open Source Usage: Developers must register third-party open-source libraries in the security portal before importing them into production codebases.
