@@ -1,222 +1,185 @@
-Guidely
-Preliminary
-Does the project follow the structure described in the subject Project Repository Structure section?
+# Guidely Project Audit
 
-YES
+This document answers each audit question with the current implementation and test evidence. Results are based on the checked-in project, manual checks reported during the audit, and the reproducible local evaluator. Metrics from the small sample corpus do not guarantee general or live-LLM performance.
 
-NO
-Does the requirements.txt file include all required Python libraries (FastAPI, OpenAI, FAISS or equivalent, pandas, numpy, etc.)?
+## Preliminary
 
-YES
+1. **Does the project follow the repository structure described in the project requirements?**
+   The repository has separate `frontend/` and `backend/` applications, with backend routes, models, services, and sample data organized in their own directories.
 
-NO
-Are all key directories and files present (frontend/, backend/, routes/, models/, data/sample-docs/)?
+2. **Does `requirements.txt` include the required Python libraries (FastAPI, OpenAI, FAISS or equivalent, pandas, NumPy, etc.)?**
+   It includes FastAPI, the OpenAI SDK, FAISS, pandas, NumPy, Sentence Transformers, Groq, and the other backend dependencies. Groq is the configured answer-generation provider; Sentence Transformers supplies compatible local embeddings.
 
-YES
+3. **Are the key directories and files present (`frontend/`, `backend/`, `routes/`, `models/`, `data/sample-docs/`)?**
+   The frontend, backend, backend routes and models, and `backend/data/sample-docs/` are present.
 
-NO
-Does the project run locally without errors when following setup steps?
+4. **Does the project run locally without errors when following the setup steps?**
+   The user confirmed that the app works when both the backend and frontend development servers are running. The earlier “Failed to fetch” happened after the backend terminal was closed.
 
-YES
+## Frontend (React / Vite)
 
-NO
-Frontend (React / Vite)
-Does the user interface contain two main views?
+5. **Does the UI contain two main views?**
+   It has an Ask a Question view and a Manage Documents view.
 
-YES
+6. **Can users type a question, see the generated answer, and view referenced documents in Ask a Question?**
+   Users can submit questions and see the answer and returned source filenames. A tested PTO question displayed `pto_policy.txt`.
 
-NO
-Ask a Question: Users can type a question, see the generated answer, and view the referenced documents.
+7. **Can admins upload, edit, or re-index documents in Manage Documents?**
+   The UI supports uploading or replacing `.txt` files and re-indexing saved files. It does not provide an in-app text editor; edit a file outside the app and then re-index it.
 
-Manage Documents: Admins can upload, edit, or re-index documents.
+8. **Are loading states and error messages displayed?**
+   Search, document loading, upload, and re-index operations display progress states. API errors are shown in the UI.
 
-Are loading states and error messages displayed properly?
+9. **Does each answer clearly show sources (filenames, snippets, or document titles)?**
+   Returned source filenames are displayed. The UI change also ensures it does not hide returned citations just because an answer includes a partial uncertainty statement. Citations identify documents, not highlighted snippets.
 
-YES
+10. **Is the UI clean, functional, and responsive?**
+    The user successfully used the interface. Responsive styles adapt the navigation, search form, and document table for narrow screens.
 
-NO
-Does each answer clearly show the sources (file names, snippets, or document titles)?
+## Backend (FastAPI)
 
-YES
+11. **Does the backend expose working endpoints for the document, indexing, search, query, and JSON-response flows?**
+    The API provides document listing/upload/re-indexing and query endpoints; manual checks and automated tests exercise these flows.
 
-NO
-Is the UI clean, functional, and responsive?
+12. **Can the backend upload and store documents?**
+    `POST /documents/upload` stores valid UTF-8 `.txt` files, replaces a file with the same name, and indexes the result immediately.
 
-YES
+13. **Can the backend generate embeddings and persist them to the vector database?**
+    Text chunks are embedded and stored in FAISS; the index and metadata are cached on disk.
 
-NO
-Backend (FastAPI)
-Does the backend expose working endpoints for:
+14. **Can the backend retrieve stored embeddings for similarity search?**
+    The FAISS index supports similarity search over normalized embeddings. Search results are filtered to avoid weak matches.
 
-YES
+15. **Can the backend handle a query through embedding, search, LLM answer generation, and references?**
+    `POST /query` follows that flow. Swagger returned a supported PTO answer with `pto_policy.txt`.
 
-NO
-Uploading and storing documents
+16. **Does the backend return clear JSON responses with relevant metadata?**
+    `/query` returns `answer` and `sources`; `/documents` returns filenames and byte sizes; `/documents/reindex` reports document/chunk counts and cache details. The query response does not expose similarity scores or snippets.
 
-Generating embeddings and persisting them to the vector database
+17. **Are the listed error cases handled gracefully?**
+    The tested cases return explicit errors or a no-result abstention. The UI displays backend responses and now gives recovery instructions when it cannot connect to the backend.
 
-Retrieving stored embeddings for similarity search operations
+18. **Is empty or missing query input handled?**
+    An empty query returns HTTP 400 with `Query string cannot be empty.` A missing `query` field returns HTTP 422 request validation.
 
-Handling a user query (embedding → search → LLM answer → references)
+19. **Are missing or invalid API keys handled?**
+    A missing key makes the answer service unavailable and queries return HTTP 503. A temporary invalid key was tested on a separate server: Groq rejected it with 401 and the API returned HTTP 502. The real key was not changed or exposed.
 
-Returning clear JSON responses with relevant metadata
+20. **Are corrupted document files handled?**
+    Invalid UTF-8 uploads are rejected with HTTP 400 and a clear message. During directory indexing, unreadable/corrupt UTF-8 files are logged and skipped; automated tests cover this behavior.
 
-Are these specific error cases handled gracefully?
+21. **Is an empty vector-search result handled?**
+    An out-of-scope cafeteria question returned HTTP 200 with an abstention answer and an empty `sources` list.
 
-YES
+22. **Are model timeouts and API errors handled?**
+    Provider timeouts map to HTTP 504 and other Groq provider errors map to HTTP 502. Automated tests cover these mappings; an invalid-key provider error was also checked manually.
 
-NO
-Empty or missing query input
+23. **Do error cases return appropriate HTTP status codes and clear messages?**
+    Observed responses include HTTP 400 for an empty query and invalid UTF-8 upload, HTTP 422 for a missing field, HTTP 502 for an invalid provider key, and HTTP 200 with no citations for no-result retrieval. Tests cover HTTP 504 for provider timeout and HTTP 503 when the answer service is unavailable.
 
-Missing or invalid API key
+24. **Does the UI display friendly error states for failed requests?**
+    Backend-provided errors appear in a visible error box. Network failures now explain that the backend at `http://127.0.0.1:8000` is unreachable and tell the user how to start it with `uvicorn backend.main:app --reload`. The frontend lint/build checks pass.
 
-Corrupted document files
+## AI & Processing
 
-No results found in vector search
+25. **Are documents converted to text and split into manageable chunks before embedding?**
+    Supported UTF-8 `.txt` documents are read and split into overlapping word chunks before embedding. PDF and Word conversion are not implemented.
 
-Model timeout or API errors
+26. **Are embeddings generated with OpenAI or a compatible model and stored in a vector database?**
+    Sentence Transformers (`all-MiniLM-L6-v2`) generates local embeddings, which are stored and searched in FAISS. This meets the audit’s “OpenAI or compatible model” wording without requiring OpenAI embeddings.
 
-Does each error case return appropriate HTTP status codes (4xx/5xx) with clear error messages?
+27. **Is caching implemented to prevent re-embedding unchanged files?**
+    A content/model/dimension fingerprint validates the persisted FAISS index. An unchanged reload reuses the cache; the evaluator measured 0 of 7 chunks re-embedded.
 
-YES
+28. **Does the system retrieve relevant chunks before generating an answer?**
+    FAISS search runs first. Only retrieved chunks that pass relevance filtering are sent to the answer-generation step.
 
-NO
-Does the UI display friendly error states for failed requests?
+29. **Are retrieved chunks and the question passed to an LLM for contextual response generation?**
+    The answer prompt contains the retrieved document context and the user’s question, and instructs the provider to answer only from that context.
 
-YES
+30. **Does the final response include document references or citations?**
+    Successful query JSON includes source filenames, which the UI displays. No-result or abstention responses have no source citations.
 
-NO
-AI & Processing
-Are documents converted to text and split into manageable chunks before embedding?
+31. **Are automated metrics logged in the backend?**
+    `GET /metrics` reports request count, query latency, failure counts by status/type, and embedding-cache state.
 
-YES
+32. **Are response latencies recorded with median and p95 calculations?**
+    The backend calculates observed median and p95 query latency. The values depend on the machine and answer provider.
 
-NO
-Are embeddings generated using OpenAI or a compatible model and stored in a vector database (FAISS, Pinecone, Weaviate, etc.)?
+33. **Is cache effectiveness recorded?**
+    Metrics and startup logs report cache-hit status and the number of chunks re-embedded on the latest index load.
 
-YES
+34. **Are failure types and counts recorded?**
+    The metrics endpoint reports query failures by HTTP status and categorized failure type.
 
-NO
-Is caching implemented to prevent re-embedding unchanged files?
+## Dataset
 
-YES
+35. **Are at least five example documents included in `data/sample-docs/`?**
+    Seven `.txt` files are present, including PTO, IT, remote-work, security, conduct, and WSL/API notes.
 
-NO
-Does the system retrieve relevant chunks before generating the answer?
+36. **Are the document contents realistic and varied?**
+    The policy samples cover leave, IT, remote work, security, and workplace conduct. A short WSL/API configuration note is also included.
 
-YES
+37. **Are long files chunked correctly for embedding?**
+    An automated test checks chunk count and overlap on a 400-word input. The current sample policies are short, so this test supplies the long-input evidence.
 
-NO
-Are retrieved chunks and question passed to an LLM for contextual response generation?
+## Code Quality
 
-YES
+38. **Is the backend organized into logical folders such as routes, models, and data?**
+    Routes, schemas/models, services, and data are separated into backend subdirectories.
 
-NO
-Does the final response include document references or source citations?
+39. **Are reusable utilities such as chunking, embedding, and search modularized?**
+    Document loading/chunking, vector embedding/search/cache, LLM orchestration, and HTTP routes are separated into modules.
 
-YES
+40. **Is the code clean, commented, and readable?**
+    The project uses focused modules, descriptive names, and docstrings. Python compilation, backend tests, frontend lint, and frontend build have passed. Comments are used where they clarify behavior rather than on every line.
 
-NO
-Are automated metrics logged in the backend?
+41. **Is sensitive data secured through `.env` files or environment variables?**
+    The Groq key is read from `GROQ_API_KEY`; `.env` is ignored by Git. The user confirmed that the file named `api-key (cursor).txt` contains WSL settings, not a key, though renaming it would reduce confusion.
 
-YES
+## Evaluation and Metrics
 
-NO
-Latency (response times with median and p95 calculations)
+42. **Does `README.md` include a metrics table with results for the required metrics?**
+    The README now includes results for retrieval, citation coverage, source precision, cached local latency, cache reuse, live latency observation, and failure handling.
 
-Cache effectiveness (cache hits vs. new embeddings generated)
+43. **Does the README explain the project’s objective and purpose?**
+    It describes Guidely as an internal RAG knowledge assistant for company policy documents.
 
-Failure cases (error types and counts)
+44. **Does the README explain embeddings, retrieval, and answer generation?**
+    It documents the local Sentence Transformers embeddings, FAISS search, and Groq-backed grounded answer generation.
 
-Dataset
-Are at least five example documents included in data/sample-docs/?
+45. **Does the README explain how to run both the backend and frontend?**
+    It links to `SETUP.md`, which gives separate terminal instructions for both development servers.
 
-YES
+46. **Does the README explain testing, metrics implementation, and results?**
+    It documents the evaluator and unit-test commands, describes the metrics endpoint, and includes current measured results with their limitations.
 
-NO
-Are document contents realistic and varied (e.g., policy, guide, FAQ)?
+47. **Does Retrieval@k meet the target of at least 80% relevant documents in the top three?**
+    The current labeled evaluation measured 9/9 (100%) on this small sample set.
 
-YES
+48. **Does answer reference coverage meet the target of at least 90%?**
+    The offline evaluator measured 9/9 (100%) responses with at least one labeled-correct source. It uses a stub answer generator, so it verifies citation propagation, not live LLM factuality.
 
-NO
-Are long files chunked correctly for embedding?
+49. **Does latency meet median-under-3-seconds and p95-under-5-seconds targets with cached embeddings?**
+    The 45-run cached local pipeline benchmark, with an offline answer stub, measured 15.99 ms median and 21.40 ms p95. A separate live `/metrics` snapshot measured 8.25 ms median and 747.77 ms p95 across seven requests. Live performance varies with runtime and provider.
 
-YES
+50. **Does unchanged-document embedding cache effectiveness meet the 100% target?**
+    A repeated unchanged-index load reused all embeddings: 0 of 7 chunks were re-embedded.
 
-NO
-Code Quality
-Is the backend organized into logical folders (routes/, models/, data/)?
+51. **Does failure handling return the expected responses for the tested cases?**
+    Automated tests and manual API checks cover empty/missing queries, unavailable service, invalid provider key, provider timeout, invalid UTF-8, and no-result retrieval.
 
-YES
+52. **Does source precision meet the target of at least 80%?**
+    The labeled offline evaluation measured 10/10 citations matching the labeled source sets. This is file-level citation precision on a small hand-labeled sample; it does not measure highlighted-snippet alignment or broad live-answer quality.
 
-NO
-Are reusable utility functions (chunking, embedding, search) properly modularized?
+53. **Is cache effectiveness demonstrated through logs?**
+    Startup logs report when cached embeddings are loaded, and `/metrics` exposes whether the most recent index load was a hit and how many chunks were re-embedded.
 
-YES
+54. **Do logs show repeated-query cache hits, or do startup logs show cached embeddings loaded from storage?**
+    Startup logs show cached embeddings loaded from disk. The cache applies to index/embedding reuse, not to repeated query answers.
 
-NO
-Is the code clean, commented, and readable?
+55. **Are test results realistic and reproducible?**
+    The evaluator uses the project’s local documents, real embeddings and FAISS search, labeled query/source pairs, a cache reload, and timed warmed runs. It is reproducible offline; the answer generator is stubbed, and the small dataset limits generalization.
 
-YES
-
-NO
-Is sensitive data secured using .env files or system environment variables?
-
-YES
-
-NO
-Evaluation and Metrics
-Does the project include a metrics table in README.md showing test results for all required metrics?
-
-YES
-
-NO
-Does the README clearly explain:
-
-YES
-
-NO
-The project's objective and purpose
-
-How embeddings, retrieval, and answer generation work
-
-How to run both the backend and frontend
-
-The Testing & Metrics implementation and results
-
-Are the following metrics documented with test results?
-
-YES
-
-NO
-Retrieval@k (relevant document appears in top-3 results) - Target: ≥ 80%
-
-Answer reference coverage (answers include at least one correct source) - Target: ≥ 90%
-
-Latency (median < 3s, p95 < 5s with cached embeddings)
-
-Embedding cache effectiveness (100% cache hits for unchanged docs)
-
-Failure handling (proper error responses for specific test cases)
-
-Source precision (≥ 80% correct snippet alignment if highlighting is implemented)
-
-Is cache effectiveness demonstrated through logs?
-
-YES
-
-NO
-Logs show 100% cache hit rate for repeated queries with unchanged documents, OR
-
-Startup logs show loading of cached embeddings from disk/database
-
-Are test results realistic and reproducible?
-
-YES
-
-NO
-Is the overall search relevance above 80% and reference accuracy above 90%?
-
-YES
-
-NO
+56. **Is overall search relevance above 80% and reference coverage above 90%?**
+    Both targets are exceeded on the current labeled sample: Retrieval@3 is 100% (9/9), and offline citation coverage is 100% (9/9). These results do not establish live LLM factual accuracy across broader questions.

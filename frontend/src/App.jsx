@@ -18,6 +18,14 @@ const renderInlineMarkdown = (text) =>
 const formatFileSize = (bytes) =>
   bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
 
+const getRequestErrorMessage = (error, fallback) => {
+  if (/failed to fetch|networkerror|load failed/i.test(error?.message || '')) {
+    return 'Cannot connect to the Guidely backend at http://127.0.0.1:8000. Start it with `uvicorn backend.main:app --reload`, then try again.'
+  }
+
+  return error?.message || fallback
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('search') // 'search' or 'admin'
   const [query, setQuery] = useState('')
@@ -58,7 +66,9 @@ function App() {
         if (!cancelled) setDocuments(data.documents)
       })
       .catch((requestError) => {
-        if (!cancelled) setUploadError(requestError.message)
+        if (!cancelled) {
+          setUploadError(getRequestErrorMessage(requestError, 'Could not load the document list.'))
+        }
       })
       .finally(() => {
         if (!cancelled) setDocumentsLoading(false)
@@ -86,7 +96,7 @@ function App() {
       const data = await response.json()
       setResult(data)
     } catch (requestError) {
-      setError(requestError.message || 'Failed to reach Guidely API. Ensure the backend is running.')
+      setError(getRequestErrorMessage(requestError, 'Could not complete your search.'))
     } finally {
       setLoading(false)
     }
@@ -106,7 +116,7 @@ function App() {
         : `Generated embeddings for ${result.chunks_reembedded} chunks.`
       setUploadMsg(`Search index ready: ${result.documents} documents, ${result.chunks} chunks. ${cacheMessage}`)
     } catch (requestError) {
-      setUploadError(requestError.message || 'Re-indexing failed.')
+      setUploadError(getRequestErrorMessage(requestError, 'Re-indexing failed.'))
     } finally {
       setUploading(false)
     }
@@ -136,7 +146,7 @@ function App() {
       setUploadFile(null)
       e.target.reset()
     } catch (requestError) {
-      setUploadError(requestError.message || 'Document upload failed.')
+      setUploadError(getRequestErrorMessage(requestError, 'Document upload failed.'))
     } finally {
       setUploading(false)
     }

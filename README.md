@@ -81,19 +81,22 @@ python tests/evaluate_retrieval.py
 python -m unittest discover -s tests -v
 ```
 
-The seven-question sample retrieval evaluation measured **7/7 correct documents in the top three (100%)** against this small labeled sample set; it exits unsuccessfully below the 80% target. This result is a small-corpus check, not a guarantee of general search quality. Unit tests cover relevant-result filtering, empty/abstention citations, unchanged-index cache reuse, chunk overlap, corrupt UTF-8 input, API errors, metrics, document upload, and re-indexing.
+The nine-question sample evaluation measures top-three retrieval, whether each generated RAG response carries at least one labeled-correct source, source precision, unchanged-index cache reuse, and warmed local pipeline latency. The answer generator is stubbed for this offline evaluation: reference coverage measures citation plumbing, not the factual correctness of live LLM prose. This small labeled corpus is not a guarantee of general search quality.
 
 | Metric | Target | Current evidence |
 | :--- | :--- | :--- |
-| Retrieval@3 | $\ge 80\%$ | 100% (7/7 sample queries; run the script to reproduce) |
-| Embedding cache reuse | 100% for unchanged documents | Covered by cache reuse unit test and startup cache-hit log |
-| Answer reference coverage | $\ge 90\%$ | Not measured against a labeled live-LLM answer set |
-| Median query latency | $<3$ s | Reported by `GET /metrics`; depends on runtime and provider |
-| p95 query latency | $<5$ s | Reported by `GET /metrics`; depends on runtime and provider |
-| Failure handling | Correct error responses | Covered for empty/missing queries, unavailable service, provider errors/timeouts, invalid uploads, and unreadable documents |
-| Source precision | $\ge80\%$ | Not measured against human-labeled answer citations |
+| Retrieval@3 | $\ge 80\%$ | 100% (9/9 labeled queries; offline evaluator) |
+| Answer reference coverage | $\ge 90\%$ | 100% (9/9 responses include at least one labeled-correct source; offline answer stub) |
+| Source precision | $\ge 80\%$ | 100% (10/10 citations match the labeled relevant-source sets) |
+| Cached local pipeline median latency | $<3$ s | 15.99 ms (45 warmed runs; offline answer stub, excludes provider latency) |
+| Cached local pipeline p95 latency | $<5$ s | 21.40 ms (45 warmed runs; offline answer stub, excludes provider latency) |
+| Live API latency observation | Median $<3$ s; p95 $<5$ s | Example local `/metrics` snapshot: 8.25 ms median and 747.77 ms p95 across 7 requests; runtime/provider dependent |
+| Unchanged-index cache reuse | 100% | 100% on repeat load (0 of 7 chunks re-embedded); also covered by unit test/startup cache-hit log |
+| Failure handling | Correct error responses | Covered by automated tests and manual checks for empty/missing queries, unavailable service, invalid key, provider timeout, invalid UTF-8 upload, and no-result retrieval |
 
-`GET /metrics` reports query count, observed median and p95 query latency, HTTP failure counts by status and type, and whether the most recent index load reused cached embeddings. The persistent FAISS cache is invalidated when document content, the embedding model, or vector dimension changes.
+Reproduce the retrieval, citation, cache, and local latency measurements with `python tests/evaluate_retrieval.py`; it exits unsuccessfully if a target is missed. Run `python -m unittest discover -s tests -v` for backend/API behavior tests. Source labels are maintained alongside the evaluation questions; the WSL question accepts both files because both contain the same WSL configuration. The offline answer stub validates reference propagation only and does not claim to score live-model factuality.
+
+`GET /metrics` reports query count, observed live median and p95 query latency, HTTP failure counts by status and type, and whether the most recent index load reused cached embeddings. Its values are runtime observations, not a fixed benchmark. The persistent FAISS cache is invalidated when document content, the embedding model, or vector dimension changes.
 
 The API also exposes `GET /documents`, `POST /documents/upload` (new `.txt` files or replacements), and `POST /documents/reindex`. Interactive API documentation is available at `http://127.0.0.1:8000/docs`.
 

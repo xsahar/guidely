@@ -1,0 +1,9 @@
+WSL and API Test Notes
+
+WSL2 uses networkingMode=mirrored.
+The configured DNS tunneling setting is dnsTunneling=true.
+These settings are listed under the [wsl2] section.
+
+API stands for Application Programming Interface.
+The internal test API listens on port 8123.
+The health-check endpoint is /health.
