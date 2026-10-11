@@ -8,6 +8,7 @@ __pycache__/
 .venv/
 venv/
 scratch.py
+backend/data/.vector-cache/
 
 # Frontend & IDE
 node_modules/

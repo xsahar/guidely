@@ -1,0 +1,5 @@
+IT Hardware & Software Usage Policy
+
+1. Equipment Provisioning: All employees are provided with a corporate laptop.
+2. Software Installation: Only pre-approved software may be installed. Requests for new tools must be submitted via IT Helpdesk.
+3. Security Updates: Operating system and security patches must be installed within 48 hours of prompt.

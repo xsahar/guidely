@@ -1,4 +1,7 @@
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 def load_text_files(data_dir: str = "backend/data/sample-docs"):
     """Reads all .txt files from the sample documents directory."""
@@ -12,15 +15,16 @@ def load_text_files(data_dir: str = "backend/data/sample-docs"):
         print(f"Directory not found: {data_dir}")
         return []
 
-    for filename in os.listdir(data_dir):
-        if filename.endswith(".txt"):
+    for filename in sorted(os.listdir(data_dir)):
+        if filename.lower().endswith(".txt"):
             file_path = os.path.join(data_dir, filename)
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-                documents.append({
-                    "filename": filename,
-                    "content": content
-                })
+            try:
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+            except (OSError, UnicodeError) as exc:
+                logger.error("Skipping unreadable document %s: %s", file_path, exc)
+                continue
+            documents.append({"filename": filename, "content": content})
     return documents
 
 
@@ -45,9 +49,6 @@ def chunk_text(text: str, chunk_size: int = 200, overlap: int = 30):
         
         # Advance by (chunk_size - overlap)
         start += (chunk_size - overlap)
-        if start >= len(words) and len(words) > 0 and len(chunks) == 0:
-            break
-
     return chunks
 
 

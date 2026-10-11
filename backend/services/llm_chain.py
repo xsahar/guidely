@@ -1,10 +1,49 @@
 import os
+import re
 from dotenv import load_dotenv
 from groq import Groq
 from backend.services.vector_store import VectorStore
 
 # Load environment variables from .env
 load_dotenv()
+
+NO_ANSWER_MESSAGE = "I could not generate an answer from the available documentation."
+
+ABSTENTION_PATTERNS = (
+    "i could not find",
+    "i couldn't find",
+    "could not generate an answer",
+    "couldn't generate an answer",
+    "can't find",
+    "cannot find",
+    "no relevant documentation",
+    "not have enough information",
+    "don't have enough information",
+    "do not have enough information",
+    "don't have the information",
+    "do not have the information",
+    "not enough information",
+    "insufficient information",
+    "not sure",
+    "don't know",
+    "do not know",
+    "i'm sorry",
+    "i am sorry",
+    "unable to answer",
+    "cannot answer",
+    "can't answer",
+    "don't have that information",
+    "do not have that information",
+    "not mentioned in",
+    "context does not contain",
+    "context doesn't contain",
+    "no information",
+)
+
+
+def is_abstention(answer: str | None) -> bool:
+    normalized = re.sub(r"\s+", " ", (answer or "").lower().replace("’", "'"))
+    return not normalized or any(phrase in normalized for phrase in ABSTENTION_PATTERNS)
 
 
 class LLMChain:
@@ -39,7 +78,7 @@ class LLMChain:
         context_text = "\n\n".join(
             [f"--- Document: {c['filename']} ---\n{c['text']}" for c in retrieved_chunks]
         )
-        sources = list(set([c["filename"] for c in retrieved_chunks]))
+        sources = list(dict.fromkeys(c["filename"] for c in retrieved_chunks))
 
         # 3. Construct system and user prompt
         system_prompt = (
@@ -62,7 +101,11 @@ class LLMChain:
             temperature=0.2,
         )
 
-        answer = completion.choices[0].message.content
+        answer = (completion.choices[0].message.content or "").strip()
+        if not answer:
+            answer = NO_ANSWER_MESSAGE
+        if is_abstention(answer):
+            sources = []
 
         return {
             "answer": answer,
